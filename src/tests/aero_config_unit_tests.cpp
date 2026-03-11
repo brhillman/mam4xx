@@ -8,8 +8,8 @@
 #include <mam4xx/mam4.hpp>
 
 #include <catch2/catch.hpp>
-#include <ekat/logging/ekat_logger.hpp>
-#include <ekat/mpi/ekat_comm.hpp>
+#include <ekat_comm.hpp>
+#include <ekat_logger.hpp>
 
 #include <map>
 #include <sstream>
@@ -30,7 +30,7 @@ TEST_CASE("aero_config", "") {
     Diagnostics diags = testing::create_diagnostics(nlev);
     Tendencies tends = testing::create_tendencies(nlev);
 
-    typedef typename ColumnView::HostMirror HostColumnView;
+    typedef typename ColumnView::host_mirror_type HostColumnView;
 
     HostColumnView h_progs_num_aer[4];
     HostColumnView h_progs_q_aer_i[4][7];

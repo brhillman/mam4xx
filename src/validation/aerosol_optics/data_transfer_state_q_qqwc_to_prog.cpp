@@ -5,7 +5,7 @@
 
 #include <mam4xx/mam4.hpp>
 
-#include <ekat/kokkos/ekat_subview_utils.hpp>
+#include <ekat_subview_utils.hpp>
 #include <haero/math.hpp>
 #include <mam4xx/aero_config.hpp>
 #include <skywalker.hpp>
@@ -139,9 +139,9 @@ void data_transfer_state_q_qqwc_to_prog(Ensemble *ensemble) {
           // 3. Let's compute the difference between the original state_q (or
           // qqcw) with the one obtained after extracting the data from prog.
           Kokkos::parallel_for(
-              Kokkos::TeamThreadRange(team, pver), [&](int kk) {
+              Kokkos::TeamThreadRange(team, pcnst), [&](int kk) {
                 Kokkos::parallel_for(
-                    Kokkos::ThreadVectorRange(team, pcnst), [&](int isp) {
+                    Kokkos::ThreadVectorRange(team, pver), [&](int isp) {
                       diff_state_q(isp, kk) =
                           state_q(isp, kk) - state_q_output(isp, kk);
                       diff_qqcw(isp, kk) = qqcw(isp, kk) - qqcw_output(isp, kk);

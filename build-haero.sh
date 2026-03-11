@@ -64,6 +64,8 @@ if [[ "$PRECISION" != "single" && "$PRECISION" != "double" ]]; then
   echo "Invalid precision specified: $PRECISION (must be single or double)"
   exit
 fi
+# This should format the string as required (first letter capitalized)
+BUILD_TYPE="${BUILD_TYPE^}"
 if [[ "$BUILD_TYPE" != "Debug" && "$BUILD_TYPE" != "Release" ]]; then
   echo "Invalid optimization specified: $BUILD_TYPE"
   echo "Must be Debug or Release (case-sensitive)"
@@ -188,6 +190,7 @@ cmake -S ./.haero -B ./.haero/build \
   -DHAERO_PRECISION=$PRECISION \
   -DKokkos_ARCH_$DEVICE_ARCH:BOOL=ON \
   -DHAERO_DEVICE_ARCH=$DEVICE_ARCH \
+  -G "Unix Makefiles" \
   || exit
 
 echo "Building and installing Haero in $PREFIX..."

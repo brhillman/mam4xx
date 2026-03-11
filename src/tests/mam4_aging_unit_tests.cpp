@@ -6,9 +6,9 @@
 #include "testing.hpp"
 #include <mam4xx/mam4.hpp>
 
-#include <ekat/ekat_type_traits.hpp>
-#include <ekat/logging/ekat_logger.hpp>
-#include <ekat/mpi/ekat_comm.hpp>
+#include <ekat_comm.hpp>
+#include <ekat_logger.hpp>
+#include <ekat_type_traits.hpp>
 
 #include <catch2/catch.hpp>
 #include <cmath>
@@ -259,10 +259,10 @@ TEST_CASE("mam4_pcarbon_aging_1subarea", "mam4_aging_process") {
       qaer_del_coag_in[ispec][imode] = 0.0;
     }
   }
-
-  aging::mam_pcarbon_aging_1subarea(dgn_a, qnum_cur, qnum_del_cond,
-                                    qnum_del_coag, qaer_cur, qaer_del_cond,
-                                    qaer_del_coag, qaer_del_coag_in);
+  const unsigned n_so4_monolayers_pcage = 8;
+  aging::mam_pcarbon_aging_1subarea(
+      n_so4_monolayers_pcage, dgn_a, qnum_cur, qnum_del_cond, qnum_del_coag,
+      qaer_cur, qaer_del_cond, qaer_del_coag, qaer_del_coag_in);
 
   // Passing in zeros for everything should give zeros back
   for (int imode = 0; imode < AeroConfig::num_modes(); ++imode) {

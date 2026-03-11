@@ -13,8 +13,6 @@ using namespace mam4;
 using namespace skywalker;
 
 void test_wetdep_clddiag(std::unique_ptr<Ensemble> &ensemble);
-void test_update_scavenging(std::unique_ptr<Ensemble> &ensemble);
-void test_wetdep_prevap(std::unique_ptr<Ensemble> &ensemble);
 void test_wetdep_resusp_nonlinear(std::unique_ptr<Ensemble> &ensemble);
 void test_wetdep_resusp_noprecip(std::unique_ptr<Ensemble> &ensemble);
 void test_wetdep_scavenging(std::unique_ptr<Ensemble> &ensemble);
@@ -70,10 +68,6 @@ int main(int argc, char **argv) {
   try {
     if (name == "wetdep_clddiag") {
       test_wetdep_clddiag(ensemble);
-    } else if (name == "update_scavenging") {
-      test_update_scavenging(ensemble);
-    } else if (name == "wetdep_prevap") {
-      test_wetdep_prevap(ensemble);
     } else if (name == "wetdep_resusp_nonlinear") {
       test_wetdep_resusp_nonlinear(ensemble);
     } else if (name == "wetdep_resusp_noprecip") {
@@ -96,8 +90,8 @@ int main(int argc, char **argv) {
     // Write out a Python module.
     std::cout << argv[0] << ": writing " << output_file << std::endl;
     ensemble->write(output_file);
+    validation::finalize(ensemble);
   } catch (Exception &e) {
     std::cerr << ": Error: " << e.what() << std::endl;
   }
-  validation::finalize();
 }
