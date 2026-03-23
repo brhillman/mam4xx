@@ -240,6 +240,159 @@ void hetero(const Real temperature, const Real w_vlc, const Real Ns, Real &Nis,
 
 } // hetero
 
+KOKKOS_INLINE_FUNCTION
+void nucleati( // inputs
+    const Real wbar, const Real tair, const Real pmid, const Real relhum,
+    const Real cldn, const Real rhoair, const Real so4_num,
+    const Real dst3_num,
+    // inputs
+    const Real
+        subgrid, // Subgrid scale factor on relative humidity (dimensionless)
+    // outputs
+    Real &nuci, Real &onihf, Real &oniimm, Real &onidep, Real &onimey) {
+  /*---------------------------------------------------------------
+  Purpose:
+   The parameterization of ice nucleation.
+
+  Method: The current method is based on Liu & Penner (2005)
+   It related the ice nucleation with the aerosol number, temperature and
+  the  updraft velocity. It includes homogeneous freezing of sulfate,
+  immersion  freezing of soot, and Meyers et al. (1992) deposition
+  nucleation
+
+  Authors: Xiaohong Liu, 01/2005, modifications by A. Gettelman 2009-2010
+  ---------------------------------------------------------------- */
+
+  // Input Arguments
+  // wbar        grid cell mean (updraft) vertical velocity [m/s]
+  // tair        temperature [K]
+  // pmid        pressure at layer midpoints [pa]
+  // relhum      relative humidity with respective to liquid [unitless]
+  // cldn        new value of cloud fraction    [fraction]
+  // rhoair      air density [kg/m3]
+  // so4_num     so4 aerosol number [#/cm^3]
+  // dst3_num     dust aerosol number [#/cm^3]
+
+  // Output Arguments
+  // nuci       ice number nucleated [#/kg]
+  // onihf      nucleated number from homogeneous freezing of so4 [#/kg]
+  // oniimm     nucleated number from immersion freezing [#/kg]
+  // onidep     nucleated number from deposition nucleation [#/kg]
+  // onimey     nucleated number from deposition nucleation  (meyers: mixed
+  // phase) [#/kg]
+
+  // Local workspace
+  Real zero = 0;
+  Real nihf = zero;  //                     nucleated number from homogeneous
+                     //                     freezing of so4 [#/cm^3]
+  Real niimm = zero; //                     nucleated number from immersion
+                     //                     freezing [#/cm^3]
+  // NOTE: this gets set to zero in every logic branch below
+  // and also within hetero()
+  Real nidep = zero; //                     nucleated number from deposition
+                     //                     nucleation [#/cm^3]
+  // NOTE: this gets set to zero at the very end
+  Real nimey = zero; //                    nucleated number from
+  // deposition nucleation (meyers) [#/cm^3]
+  Real n1 = zero;
+  Real ni = zero; //                  nucleated number [#/cm^3]
+  const Real tc =
+      tair - Real(273.15); //                      air temperature [C]
+  Real regm = zero;        //                    air temperature [C]
+
+  // BAD CONSTANT
+  const Real num_threshold = 1.0e-10;
+
+  if (so4_num >= num_threshold && dst3_num >= num_threshold && cldn > zero) {
+    if ((tc <= Real(-35.0)) && (relhum * wv_sat_methods::svp_water(tair) /
+                                    wv_sat_methods::svp_ice(tair) * subgrid >=
+                                Real(1.2))) {
+      // use higher RHi threshold
+      nucleate_ice::calculate_regm_nucleati(wbar, dst3_num, regm);
+      if (tc > regm) {
+        // heterogeneous nucleation only
+        // BAD CONSTANT
+        if (tc < -Real(40) && wbar > Real(1.)) {
+          // exclude T < -40 & W > 1 m/s from hetero.nucleation
+
+          nucleate_ice::hf(tc, wbar, relhum, so4_num, subgrid, nihf);
+          niimm = zero;
+          nidep = zero;
+          n1 = nihf;
+
+        } else {
+
+          nucleate_ice::hetero(tc, wbar, dst3_num, niimm, nidep);
+          nihf = zero;
+          n1 = niimm + nidep;
+
+        } // end tc<Real(-40) ...
+      } else if (tc < regm - Real(5.)) {
+        // homogeneous nucleation only
+        nucleate_ice::hf(tc, wbar, relhum, so4_num, subgrid, nihf);
+        niimm = zero;
+        nidep = zero;
+        n1 = nihf;
+      } else {
+        // transition between homogeneous and heterogeneous: interpolate
+        // in-between
+
+        // BAD CONSTANT
+        if (tc < -Real(40.) && wbar > Real(1.)) {
+          // exclude T < -40 & W > 1 m/s from hetero. nucleation
+
+          nucleate_ice::hf(tc, wbar, relhum, so4_num, subgrid, nihf);
+          niimm = zero;
+          nidep = zero;
+          n1 = nihf;
+
+        } else {
+
+          nucleate_ice::hf(regm - Real(5.), wbar, relhum, so4_num, subgrid,
+                           nihf);
+          nucleate_ice::hetero(regm, wbar, dst3_num, niimm, nidep);
+
+          if (nihf <= (niimm + nidep)) {
+            n1 = nihf;
+          } else {
+            n1 = (niimm + nidep) *
+                 haero::pow((niimm + nidep) / nihf, (tc - regm) / Real(5.));
+
+          } // end nihf <= (niimm + nidep)
+
+        } // end tc < -40.
+
+      } // end tc > regm
+
+      ni = n1;
+
+    } // end tc ...
+
+  } // end so4_num ..
+
+  /* deposition/condensation nucleation in mixed clouds (-37 < T < 0 C)
+  (Meyers, 1992) this part is executed but is always replaced by 0, because
+  CNT scheme takes over the calculation. use_hetfrz_classnuc is always true.
+  */
+  // FIXME OD: why adding zero to nuci? is something missing?
+  // mjs: this whole thing is bizarre--add zero and if that makes it >= 1e4
+  // or < 0, then make it zero? And this is the only thing that happens to
+  // nuci in this process?
+  nimey = zero;
+  // BAD CONSTANT
+  nuci = ni + nimey;
+  if (nuci > Real(9999.) || nuci < zero) {
+    nuci = zero;
+  } // end
+
+  const Real one_millon = 1.e+6;
+  nuci = nuci * one_millon / rhoair; //  change unit from #/cm3 to #/kg
+  onimey = nimey * one_millon / rhoair;
+  onidep = nidep * one_millon / rhoair;
+  oniimm = niimm * one_millon / rhoair;
+  onihf = nihf * one_millon / rhoair;
+
+} // end nucleati
 } // end namespace nucleate_ice
 
 /// @class nucleate_ice
@@ -418,7 +571,7 @@ public:
 
         // Real naai = zero;
 
-        nucleati(wsubi(kk), temp, pmid, relhum, icldm, air_density, so4_num,
+        nucleate_ice::nucleati(wsubi(kk), temp, pmid, relhum, icldm, air_density, so4_num,
                  dst3_num, subgrid,
                  // outputs
                  naai(kk), nihf(kk), niimm(kk), nidep(kk), nimey(kk));
@@ -438,161 +591,6 @@ public:
       } // end temp
     }); // kokkos::parfor(k)
   }
-
-public:
-  KOKKOS_INLINE_FUNCTION
-  void nucleati( // inputs
-      const Real wbar, const Real tair, const Real pmid, const Real relhum,
-      const Real cldn, const Real rhoair, const Real so4_num,
-      const Real dst3_num,
-      // inputs
-      const Real
-          subgrid, // Subgrid scale factor on relative humidity (dimensionless)
-      // outputs
-      Real &nuci, Real &onihf, Real &oniimm, Real &onidep, Real &onimey) const {
-    /*---------------------------------------------------------------
-    Purpose:
-     The parameterization of ice nucleation.
-
-    Method: The current method is based on Liu & Penner (2005)
-     It related the ice nucleation with the aerosol number, temperature and
-    the  updraft velocity. It includes homogeneous freezing of sulfate,
-    immersion  freezing of soot, and Meyers et al. (1992) deposition
-    nucleation
-
-    Authors: Xiaohong Liu, 01/2005, modifications by A. Gettelman 2009-2010
-    ---------------------------------------------------------------- */
-
-    // Input Arguments
-    // wbar        grid cell mean (updraft) vertical velocity [m/s]
-    // tair        temperature [K]
-    // pmid        pressure at layer midpoints [pa]
-    // relhum      relative humidity with respective to liquid [unitless]
-    // cldn        new value of cloud fraction    [fraction]
-    // rhoair      air density [kg/m3]
-    // so4_num     so4 aerosol number [#/cm^3]
-    // dst3_num     dust aerosol number [#/cm^3]
-
-    // Output Arguments
-    // nuci       ice number nucleated [#/kg]
-    // onihf      nucleated number from homogeneous freezing of so4 [#/kg]
-    // oniimm     nucleated number from immersion freezing [#/kg]
-    // onidep     nucleated number from deposition nucleation [#/kg]
-    // onimey     nucleated number from deposition nucleation  (meyers: mixed
-    // phase) [#/kg]
-
-    // Local workspace
-    Real zero = 0;
-    Real nihf = zero;  //                     nucleated number from homogeneous
-                       //                     freezing of so4 [#/cm^3]
-    Real niimm = zero; //                     nucleated number from immersion
-                       //                     freezing [#/cm^3]
-    // NOTE: this gets set to zero in every logic branch below
-    // and also within hetero()
-    Real nidep = zero; //                     nucleated number from deposition
-                       //                     nucleation [#/cm^3]
-    // NOTE: this gets set to zero at the very end
-    Real nimey = zero; //                    nucleated number from
-    // deposition nucleation (meyers) [#/cm^3]
-    Real n1 = zero;
-    Real ni = zero; //                  nucleated number [#/cm^3]
-    const Real tc =
-        tair - Real(273.15); //                      air temperature [C]
-    Real regm = zero;        //                    air temperature [C]
-
-    // BAD CONSTANT
-    const Real num_threshold = 1.0e-10;
-
-    if (so4_num >= num_threshold && dst3_num >= num_threshold && cldn > zero) {
-      if ((tc <= Real(-35.0)) && (relhum * wv_sat_methods::svp_water(tair) /
-                                      wv_sat_methods::svp_ice(tair) * subgrid >=
-                                  Real(1.2))) {
-        // use higher RHi threshold
-        nucleate_ice::calculate_regm_nucleati(wbar, dst3_num, regm);
-        if (tc > regm) {
-          // heterogeneous nucleation only
-          // BAD CONSTANT
-          if (tc < -Real(40) && wbar > Real(1.)) {
-            // exclude T < -40 & W > 1 m/s from hetero.nucleation
-
-            nucleate_ice::hf(tc, wbar, relhum, so4_num, subgrid, nihf);
-            niimm = zero;
-            nidep = zero;
-            n1 = nihf;
-
-          } else {
-
-            nucleate_ice::hetero(tc, wbar, dst3_num, niimm, nidep);
-            nihf = zero;
-            n1 = niimm + nidep;
-
-          } // end tc<Real(-40) ...
-        } else if (tc < regm - Real(5.)) {
-          // homogeneous nucleation only
-          nucleate_ice::hf(tc, wbar, relhum, so4_num, subgrid, nihf);
-          niimm = zero;
-          nidep = zero;
-          n1 = nihf;
-        } else {
-          // transition between homogeneous and heterogeneous: interpolate
-          // in-between
-
-          // BAD CONSTANT
-          if (tc < -Real(40.) && wbar > Real(1.)) {
-            // exclude T < -40 & W > 1 m/s from hetero. nucleation
-
-            nucleate_ice::hf(tc, wbar, relhum, so4_num, subgrid, nihf);
-            niimm = zero;
-            nidep = zero;
-            n1 = nihf;
-
-          } else {
-
-            nucleate_ice::hf(regm - Real(5.), wbar, relhum, so4_num, subgrid,
-                             nihf);
-            nucleate_ice::hetero(regm, wbar, dst3_num, niimm, nidep);
-
-            if (nihf <= (niimm + nidep)) {
-              n1 = nihf;
-            } else {
-              n1 = (niimm + nidep) *
-                   haero::pow((niimm + nidep) / nihf, (tc - regm) / Real(5.));
-
-            } // end nihf <= (niimm + nidep)
-
-          } // end tc < -40.
-
-        } // end tc > regm
-
-        ni = n1;
-
-      } // end tc ...
-
-    } // end so4_num ..
-
-    /* deposition/condensation nucleation in mixed clouds (-37 < T < 0 C)
-    (Meyers, 1992) this part is executed but is always replaced by 0, because
-    CNT scheme takes over the calculation. use_hetfrz_classnuc is always true.
-  */
-    // FIXME OD: why adding zero to nuci? is something missing?
-    // mjs: this whole thing is bizarre--add zero and if that makes it >= 1e4
-    // or < 0, then make it zero? And this is the only thing that happens to
-    // nuci in this process?
-    nimey = zero;
-    // BAD CONSTANT
-    nuci = ni + nimey;
-    if (nuci > Real(9999.) || nuci < zero) {
-      nuci = zero;
-    } // end
-
-    const Real one_millon = 1.e+6;
-    nuci = nuci * one_millon / rhoair; //  change unit from #/cm3 to #/kg
-    onimey = nimey * one_millon / rhoair;
-    onidep = nidep * one_millon / rhoair;
-    oniimm = niimm * one_millon / rhoair;
-    onihf = nihf * one_millon / rhoair;
-
-  } // end nucleati
 };  // end class nucleate_ice
 } // end namespace mam4
 
